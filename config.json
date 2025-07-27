@@ -1,0 +1,26 @@
+{
+  "database": {
+    "path": "automation.db",
+    "pool_size": 5
+  },
+  "device": {
+    "type": "emulator",
+    "instance_index": 0,
+    "ld_path": "D:\\计算机辅助\\leidian\\LDPlayer9\\ld.exe",
+    "ldconsole_path": "D:\\计算机辅助\\leidian\\LDPlayer9\\ldconsole.exe"
+  },
+  "recognition": {
+    "ocr_lang": "chi_sim+eng",
+    "ocr_config": "--psm 6",
+    "match_threshold": 0.8
+  },
+  "scheduling": {
+    "default_time_slice": 7200,
+    "default_daily_limit": 14400,
+    "default_reset_time": "04:00"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "automation.log"
+  }
+}

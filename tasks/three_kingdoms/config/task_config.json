@@ -1,0 +1,8 @@
+{
+  "task_id": "three_kingdoms_daily",
+  "name": "三国杀日常任务",
+  "app_id": "three_kingdoms",
+  "type": "daily",
+  "priority": 5,
+  "handler_class": "tasks.three_kingdoms.main_task.ThreeKingdomsTask"
+}
