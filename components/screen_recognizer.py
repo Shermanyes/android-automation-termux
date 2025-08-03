@@ -1,5 +1,4 @@
 import os
-import cv2
 import numpy as np
 import time
 import json
@@ -7,7 +6,9 @@ import logging
 from typing import Dict, List, Optional, Tuple, Any
 from core.interfaces import IScreenRecognizer, IDeviceController, IDatabaseManager
 from core.base_classes import SystemModule
-from PIL import Image
+from PIL import Image, ImageStat, ImageFilter, ImageChops
+from scipy import ndimage
+from scipy.signal import correlate2d
 
 try:
     from ultralytics import YOLO
@@ -23,6 +24,96 @@ logging.basicConfig(
     handlers=[logging.FileHandler("screen_recognizer.log"), logging.StreamHandler()]
 )
 logger = logging.getLogger('screen_recognizer')
+
+
+class ImageProcessor:
+    """图像处理工具类，替代OpenCV功能"""
+    
+    @staticmethod
+    def template_match(image: Image.Image, template: Image.Image, threshold: float = 0.8):
+        """模板匹配，替代cv2.matchTemplate"""
+        try:
+            # 转换为numpy数组
+            img_array = np.array(image.convert('L'))  # 转为灰度
+            template_array = np.array(template.convert('L'))
+            
+            # 归一化
+            img_array = img_array.astype(np.float32) / 255.0
+            template_array = template_array.astype(np.float32) / 255.0
+            
+            # 使用scipy的correlate2d进行匹配
+            correlation = correlate2d(img_array, template_array, mode='valid')
+            
+            # 归一化相关系数
+            img_mean = np.mean(img_array)
+            template_mean = np.mean(template_array)
+            img_std = np.std(img_array)
+            template_std = np.std(template_array)
+            
+            if img_std == 0 or template_std == 0:
+                return None
+                
+            normalized_correlation = (correlation - img_mean * template_mean) / (img_std * template_std)
+            
+            # 找到最大值位置
+            max_val = np.max(normalized_correlation)
+            if max_val >= threshold:
+                max_loc = np.unravel_index(np.argmax(normalized_correlation), normalized_correlation.shape)
+                # 返回 (y, x) 格式，对应OpenCV的max_loc格式
+                return (max_loc[1], max_loc[0], max_val)
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"模板匹配失败: {str(e)}")
+            return None
+    
+    @staticmethod
+    def calculate_histogram(image: Image.Image, bins: int = 16):
+        """计算图像直方图"""
+        try:
+            # 分别计算RGB三个通道的直方图
+            r, g, b = image.split()
+            
+            hist_r = np.histogram(np.array(r), bins=bins, range=(0, 255))[0]
+            hist_g = np.histogram(np.array(g), bins=bins, range=(0, 255))[0]
+            hist_b = np.histogram(np.array(b), bins=bins, range=(0, 255))[0]
+            
+            return hist_r, hist_g, hist_b
+            
+        except Exception as e:
+            logger.error(f"直方图计算失败: {str(e)}")
+            return None, None, None
+    
+    @staticmethod
+    def edge_detection(image: Image.Image):
+        """边缘检测，替代cv2.Canny"""
+        try:
+            # 转为灰度图
+            gray = image.convert('L')
+            
+            # 使用PIL的FIND_EDGES滤镜
+            edges = gray.filter(ImageFilter.FIND_EDGES)
+            
+            # 转为numpy数组并二值化
+            edges_array = np.array(edges)
+            edges_binary = (edges_array > 50).astype(np.uint8) * 255
+            
+            return edges_binary
+            
+        except Exception as e:
+            logger.error(f"边缘检测失败: {str(e)}")
+            return None
+    
+    @staticmethod
+    def resize_image(image: Image.Image, size: Tuple[int, int]):
+        """调整图像大小"""
+        return image.resize(size, Image.Resampling.LANCZOS)
+    
+    @staticmethod
+    def crop_image(image: Image.Image, bbox: Tuple[int, int, int, int]):
+        """裁剪图像"""
+        return image.crop(bbox)
 
 
 class ScreenshotCache:
@@ -123,7 +214,7 @@ class RecognitionResultCache:
 
 
 class ScreenRecognizer(SystemModule, IScreenRecognizer):
-    """优化后的屏幕识别器"""
+    """去除OpenCV依赖的屏幕识别器"""
 
     def __init__(self, device_controller: IDeviceController, db_manager: IDatabaseManager = None):
         """初始化屏幕识别器
@@ -132,9 +223,12 @@ class ScreenRecognizer(SystemModule, IScreenRecognizer):
             device_controller: 设备控制器实例
             db_manager: 数据库管理器实例
         """
-        super().__init__("ScreenRecognizer", "2.0")
+        super().__init__("ScreenRecognizer", "2.1-NoOpenCV")
         self.device = device_controller
         self.db_manager = db_manager
+        
+        # 图像处理器
+        self.image_processor = ImageProcessor()
         
         # 缓存系统
         self.screenshot_cache = ScreenshotCache()
@@ -162,14 +256,16 @@ class ScreenRecognizer(SystemModule, IScreenRecognizer):
         if self._initialized:
             return True
 
-        self.log_info("初始化优化后的屏幕识别器")
+        self.log_info("初始化去除OpenCV依赖的屏幕识别器")
 
         # 检查必要依赖
         try:
-            cv_version = cv2.__version__
-            self.log_info(f"OpenCV版本: {cv_version}")
-        except Exception as e:
-            self.log_error(f"OpenCV不可用: {str(e)}")
+            import numpy
+            import scipy
+            self.log_info(f"NumPy版本: {numpy.__version__}")
+            self.log_info(f"SciPy版本: {scipy.__version__}")
+        except ImportError as e:
+            self.log_error(f"必要依赖不可用: {str(e)}")
             return False
 
         # 检查YOLO可用性
@@ -179,7 +275,7 @@ class ScreenRecognizer(SystemModule, IScreenRecognizer):
             self.log_warning("YOLO不可用，物体检测功能将被禁用")
 
         self._initialized = True
-        self.log_info("屏幕识别器初始化完成")
+        self.log_info("屏幕识别器初始化完成 (No OpenCV)")
         return True
         
     def shutdown(self) -> bool:
@@ -222,7 +318,7 @@ class ScreenRecognizer(SystemModule, IScreenRecognizer):
     # ==================== 原有方法保留 ====================
 
     def find_image(self, template_path: str, threshold: float = 0.8, roi: tuple = None):
-        """在屏幕上查找模板图像（保留原有实现）"""
+        """在屏幕上查找模板图像（使用PIL+numpy替代OpenCV）"""
         if not self._initialized:
             self.log_error("识别器未初始化")
             return None
@@ -233,41 +329,38 @@ class ScreenRecognizer(SystemModule, IScreenRecognizer):
             if screenshot is None:
                 self.log_error("获取屏幕截图失败")
                 return None
-                
-            # 转换为OpenCV格式
-            screenshot_np = np.array(screenshot)
-            screenshot_np = cv2.cvtColor(screenshot_np, cv2.COLOR_RGB2BGR)
             
             # 如果指定了ROI，裁剪图像
             if roi:
                 x1, y1, x2, y2 = roi
-                screenshot_np = screenshot_np[y1:y2, x1:x2]
+                screenshot = self.image_processor.crop_image(screenshot, (x1, y1, x2, y2))
 
             # 读取模板图像
-            template = cv2.imread(template_path)
-            if template is None:
-                self.log_error(f"无法读取模板图像: {template_path}")
+            try:
+                template = Image.open(template_path)
+            except Exception as e:
+                self.log_error(f"无法读取模板图像: {template_path}, {str(e)}")
                 return None
 
             # 模板匹配
-            result = cv2.matchTemplate(screenshot_np, template, cv2.TM_CCOEFF_NORMED)
-            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+            match_result = self.image_processor.template_match(screenshot, template, threshold)
             
-            # 检查匹配度
-            if max_val >= threshold:
-                w, h = template.shape[1], template.shape[0]
-                center_x = max_loc[0] + w // 2
-                center_y = max_loc[1] + h // 2
+            if match_result:
+                match_x, match_y, match_val = match_result
+                w, h = template.size
+                
+                center_x = match_x + w // 2
+                center_y = match_y + h // 2
                 
                 # 如果使用了ROI，调整坐标
                 if roi:
                     center_x += roi[0]
                     center_y += roi[1]
                     
-                self.log_info(f"找到图像 {template_path}，位置: ({center_x}, {center_y})，匹配度: {max_val:.2f}")
+                self.log_info(f"找到图像 {template_path}，位置: ({center_x}, {center_y})，匹配度: {match_val:.2f}")
                 return (center_x, center_y, w, h)
             else:
-                self.log_info(f"未找到图像: {template_path}，最佳匹配度: {max_val:.2f}")
+                self.log_info(f"未找到图像: {template_path}")
                 return None
                 
         except Exception as e:
@@ -392,19 +485,15 @@ class ScreenRecognizer(SystemModule, IScreenRecognizer):
     def _extract_state_features(self, screenshot: Image.Image, app_id: str) -> np.ndarray:
         """提取状态识别的轻量级特征"""
         try:
-            # 转换为numpy数组
-            img_array = np.array(screenshot)
-            
             features = []
             
             # 1. 全局颜色直方图特征
-            hist_b = cv2.calcHist([img_array], [0], None, [16], [0, 256])
-            hist_g = cv2.calcHist([img_array], [1], None, [16], [0, 256])
-            hist_r = cv2.calcHist([img_array], [2], None, [16], [0, 256])
+            hist_r, hist_g, hist_b = self.image_processor.calculate_histogram(screenshot, bins=16)
             
-            features.extend(hist_b.flatten())
-            features.extend(hist_g.flatten())
-            features.extend(hist_r.flatten())
+            if hist_r is not None:
+                features.extend(hist_r)
+                features.extend(hist_g)
+                features.extend(hist_b)
             
             # 2. ROI区域特征（如果配置了）
             app_states = self.state_configs.get(app_id, {})
@@ -417,16 +506,18 @@ class ScreenRecognizer(SystemModule, IScreenRecognizer):
             for roi_name, roi_bbox in roi_configs.items():
                 if len(roi_bbox) >= 4:
                     x1, y1, x2, y2 = roi_bbox[:4]
-                    roi_region = img_array[y1:y2, x1:x2]
-                    if roi_region.size > 0:
-                        roi_mean_color = np.mean(roi_region, axis=(0, 1))
+                    roi_region = self.image_processor.crop_image(screenshot, (x1, y1, x2, y2))
+                    if roi_region.size[0] > 0 and roi_region.size[1] > 0:
+                        # 使用PIL的ImageStat计算平均颜色
+                        stat = ImageStat.Stat(roi_region)
+                        roi_mean_color = stat.mean
                         features.extend(roi_mean_color)
             
             # 3. 边缘密度特征
-            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-            edges = cv2.Canny(gray, 50, 150)
-            edge_density = np.sum(edges) / (edges.shape[0] * edges.shape[1])
-            features.append(edge_density)
+            edges = self.image_processor.edge_detection(screenshot)
+            if edges is not None:
+                edge_density = np.sum(edges) / (edges.shape[0] * edges.shape[1])
+                features.append(edge_density)
             
             return np.array(features)
             
@@ -791,4 +882,3 @@ class ScreenRecognizer(SystemModule, IScreenRecognizer):
         except Exception as e:
             self.log_error(f"保存调试截图失败: {str(e)}")
             return ""
-                

@@ -1,0 +1,242 @@
+classDiagram
+    %% 接口定义 Interface Definitions
+    class ISystemModule {
+        <<interface>>
+        +initialize() bool 初始化
+        +shutdown() bool 关闭
+        +is_initialized bool 是否已初始化
+        +name str 模块名称
+        +version str 版本号
+    }
+    
+    class IDatabaseManager {
+        <<interface>>
+        +execute(query, params) int 执行SQL
+        +executemany(query, params_list) int 批量执行
+        +fetch_one(query, params) Dict 获取单行
+        +fetch_all(query, params) List 获取所有行
+        +insert(table, data) int 插入数据
+        +update(table, data, condition, params) int 更新数据
+        +delete(table, condition, params) int 删除数据
+        +exists(table, condition, params) bool 检查存在
+        +count(table, condition, params) int 计数
+        +transaction() 事务管理
+        +backup(backup_path) bool 备份
+        +log_activity(action, status, app_id, account_id, task_id, details) 记录活动
+    }
+    
+    class IDeviceController {
+        <<interface>>
+        +take_screenshot(filename) Image/bool 截图
+        +tap(x, y) bool 点击
+        +swipe(x1, y1, x2, y2, duration) bool 滑动
+        +input_text(text) bool 输入文本
+        +press_key(keycode) bool 按键
+        +back() bool 返回键
+        +home() bool 主页键
+        +start_app(package_name) bool 启动应用
+        +stop_app(package_name) bool 停止应用
+        +wait(seconds) None 等待
+    }
+    
+    class IScreenRecognizer {
+        <<interface>>
+        +find_image(template_path, threshold, roi) Tuple 查找图片
+        +find_text(text, lang, config, roi, threshold) Tuple 查找文本
+        +get_screen_text(lang) str 获取屏幕文本
+        +recognize_scene(scene_configs) str 识别场景
+    }
+    
+    class ITask {
+        <<interface>>
+        +execute() bool 执行任务
+        +start_monitor(config) None 开始监控
+        +stop_monitor() None 停止监控
+        +get_status() Dict 获取状态
+        +name str 任务名称
+        +task_id str 任务ID
+        +app_id str 应用ID
+        +parent_id str 父任务ID
+    }
+    
+    class ITaskManager {
+        <<interface>>
+        +register_task(task_class, task_config) str 注册任务
+        +unregister_task(task_id) bool 注销任务
+        +execute_task(task_id) bool 执行任务
+        +execute_task_async(task_id) bool 异步执行任务
+        +stop_task(task_id) bool 停止任务
+        +get_task_status(task_id, account_id) Dict 获取任务状态
+        +update_task_status(task_id, account_id, status) bool 更新任务状态
+        +get_next_task(app_id, account_id) str 获取下一个任务
+        +get_task_list(app_id, parent_id) List 获取任务列表
+    }
+    
+    class IAppScheduler {
+        <<interface>>
+        +register_app(app_id, app_config) bool 注册应用
+        +unregister_app(app_id) bool 注销应用
+        +start() bool 开始调度
+        +stop() bool 停止调度
+        +get_next_app() str 获取下一个应用
+        +update_app_runtime(app_id, seconds) bool 更新运行时间
+        +switch_to_app(app_id) bool 切换应用
+        +get_app_status(app_id) Dict 获取应用状态
+        +get_app_list() List 获取应用列表
+    }
+    
+    class IAccountService {
+        <<interface>>
+        +add_account(account_id, app_id, account_info) bool 添加账户
+        +remove_account(account_id) bool 移除账户
+        +get_account(account_id) Dict 获取账户信息
+        +get_account_list(app_id) List 获取账户列表
+        +get_next_account(app_id) str 获取下一个账户
+        +switch_to_account(account_id) bool 切换账户
+        +update_account_task_status(account_id, task_id, completed) bool 更新账户任务状态
+        +get_account_task_status(account_id, task_id) Dict 获取账户任务状态
+        +clear_daily_tasks(app_id, account_id) bool 清除日常任务
+    }
+    
+    class IStateManager {
+        <<interface>>
+        +register_state(state_id, app_id, recognition_config, callback) bool 注册状态
+        +unregister_state(state_id) bool 注销状态
+        +start_monitoring(interval) bool 开始监控
+        +stop_monitoring() bool 停止监控
+        +get_current_state() str 获取当前状态
+        +recognize_current_scene(app_id) str 识别当前场景
+    }
+    
+    class ISystemKernel {
+        <<interface>>
+        +get_module(module_name) ISystemModule 获取模块
+        +register_module(module) bool 注册模块
+        +unregister_module(module_name) bool 注销模块
+        +start() bool 启动系统
+        +stop() bool 停止系统
+        +is_running() bool 是否运行中
+    }
+    
+    class IConfigParserPlugin {
+        <<interface>>
+        +get_name() str 获取解析器名称
+        +parse(content, task_name, db_path) bool 解析配置
+    }
+    
+    %% 基础类实现 Base Implementation Classes
+    class SystemModule {
+        -_name: str 模块名称
+        -_version: str 版本号
+        -_initialized: bool 初始化状态
+        -_logger: Logger 日志记录器
+        +__init__(name, version) 构造函数
+        +initialize() bool 初始化
+        +shutdown() bool 关闭
+        +is_initialized bool 是否已初始化
+        +name str 获取模块名称
+        +version str 获取版本号
+        +log_info(message) 记录信息日志
+        +log_warning(message) 记录警告日志
+        +log_error(message) 记录错误日志
+        +log_debug(message) 记录调试日志
+    }
+    
+    class Task {
+        -_task_id: str 任务ID
+        -_name: str 任务名称
+        -_app_id: str 应用ID
+        -_parent_id: str 父任务ID
+        -_monitor_thread: Thread 监控线程
+        -_monitor_running: bool 监控状态
+        -_logger: Logger 日志记录器
+        +__init__(task_id, name, app_id, parent_id) 构造函数
+        +start_monitor(config) None 开始监控
+        +stop_monitor() None 停止监控
+        +get_status() Dict 获取状态
+        +log(message) 记录日志
+        +get_task_resource_path(resource_type, resource_name) str 获取资源路径
+        +load_task_config(config_name) Dict 加载配置
+        -_monitor_loop(config) None 监控循环
+    }
+    
+    class ModuleRegistry {
+        -_modules: Dict[str, ISystemModule] 模块字典
+        -_lock: Lock 线程锁
+        -_logger: Logger 日志记录器
+        +__init__() 构造函数
+        +register_module(module) bool 注册模块
+        +unregister_module(module_name) bool 注销模块
+        +get_module(module_name) ISystemModule 获取模块
+        +get_all_modules() Dict 获取所有模块
+        +get_module_by_interface(interface_class) List 按接口获取模块
+    }
+    
+    class SystemKernel {
+        -_name: str 内核名称
+        -_version: str 版本号
+        -_registry: ModuleRegistry 模块注册表
+        -_running: bool 运行状态
+        -_initialized: bool 初始化状态
+        -_logger: Logger 日志记录器
+        +__init__() 构造函数
+        +initialize() bool 初始化
+        +shutdown() bool 关闭
+        +start() bool 启动
+        +stop() bool 停止
+        +is_running() bool 是否运行中
+        +get_module(module_name) ISystemModule 获取模块
+        +register_module(module) bool 注册模块
+        +unregister_module(module_name) bool 注销模块
+        +get_context() Dict 获取上下文
+    }
+    
+    class AndroidDeviceController {
+        -instance_index: int 实例索引
+        -ld_path: str 雷电路径
+        -ldconsole_path: str 控制台路径
+        -screen_width: int 屏幕宽度
+        -screen_height: int 屏幕高度
+        -_lock: Lock 线程锁
+        +__init__(instance_index, ld_path, ldconsole_path) 构造函数
+        +initialize() bool 初始化
+        +take_screenshot(filename) Image/bool 截图
+        +tap(x, y) bool 点击
+        +swipe(x1, y1, x2, y2, duration) bool 滑动
+        +input_text(text) bool 输入文本
+        +press_key(keycode) bool 按键
+        +back() bool 返回键
+        +home() bool 主页键
+        +start_app(package_name) bool 启动应用
+        +stop_app(package_name) bool 停止应用
+        +wait(seconds) None 等待
+    }
+    
+    %% 继承关系 Inheritance Relationships
+    ISystemModule <|-- IDatabaseManager
+    ISystemModule <|-- IDeviceController
+    ISystemModule <|-- IScreenRecognizer
+    ISystemModule <|-- ITaskManager
+    ISystemModule <|-- IAppScheduler
+    ISystemModule <|-- IAccountService
+    ISystemModule <|-- IStateManager
+    ISystemModule <|-- ISystemKernel
+    
+    %% 实现关系 Implementation Relationships
+    SystemModule ..|> ISystemModule
+    Task ..|> ITask
+    SystemKernel ..|> ISystemKernel
+    AndroidDeviceController ..|> IDeviceController
+    
+    %% 继承关系 Inheritance Relationships
+    SystemModule <|-- AndroidDeviceController
+    
+    %% 组合关系 Composition Relationships
+    SystemKernel *-- ModuleRegistry
+    ModuleRegistry o-- ISystemModule
+    
+    %% 依赖关系 Dependency Relationships
+    Task ..> ISystemModule : uses
+    AndroidDeviceController ..> Image : creates
+    AndroidDeviceController ..> subprocess : uses
+    AndroidDeviceController ..> threading : uses

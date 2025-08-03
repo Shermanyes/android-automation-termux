@@ -1,0 +1,221 @@
+sequenceDiagram
+    participant User as 用户 User
+    participant SK as 系统内核 SystemKernel
+    participant AS as 应用调度器 AppScheduler
+    participant TM as 任务管理器 TaskManager
+    participant DC as 设备控制器 DeviceController
+    participant SR as 屏幕识别器 ScreenRecognizer
+    participant SM as 状态管理器 StateManager
+    participant DB as 数据库管理器 DatabaseManager
+    participant ACC as 账户服务 AccountService
+    
+    Note over User,ACC: 系统启动阶段 System Startup Phase
+    
+    User->>SK: 启动系统 start()
+    SK->>SK: 初始化内核 initialize()
+    SK->>DB: 初始化数据库 initialize()
+    DB-->>SK: 初始化完成 success
+    SK->>DC: 初始化设备控制器 initialize()
+    DC->>DC: 连接设备/模拟器 connect device
+    DC-->>SK: 设备就绪 device ready
+    SK->>SR: 初始化屏幕识别器 initialize()
+    SR->>SR: 加载OCR引擎 load OCR engines
+    SR-->>SK: 识别器就绪 recognizer ready
+    SK->>SM: 初始化状态管理器 initialize()
+    SM->>DB: 加载状态配置 load states
+    DB-->>SM: 状态配置 state configs
+    SM-->>SK: 状态管理器就绪 state manager ready
+    SK->>TM: 初始化任务管理器 initialize()
+    TM-->>SK: 任务管理器就绪 task manager ready
+    SK->>AS: 初始化应用调度器 initialize()
+    AS-->>SK: 调度器就绪 scheduler ready
+    SK->>ACC: 初始化账户服务 initialize()
+    ACC->>DB: 加载账户配置 load accounts
+    DB-->>ACC: 账户数据 account data
+    ACC-->>SK: 账户服务就绪 account service ready
+    SK-->>User: 系统启动完成 system ready
+    
+    Note over User,ACC: 应用调度执行阶段 App Scheduling Phase
+    
+    User->>AS: 开始调度 start()
+    AS->>AS: 启动调度线程 start scheduling thread
+    AS->>AS: 启动状态检查线程 start status check thread
+    
+    loop 调度循环 Scheduling Loop
+        AS->>AS: 检查每日重置 check_daily_reset()
+        AS->>DB: 查询重置时间配置 query reset time config
+        DB-->>AS: 重置配置 reset config
+        
+        alt 需要重置 Need Reset
+            AS->>DB: 重置每日运行时间 reset daily runtime
+            AS->>TM: 重置每日任务 reset_daily_tasks()
+            TM->>DB: 更新任务状态 update task status
+            DB-->>TM: 重置完成 reset completed
+            TM-->>AS: 任务重置完成 task reset completed
+        end
+        
+        AS->>AS: 获取下一个应用 get_next_app()
+        AS->>DB: 查询应用配置和优先级 query app config and priority
+        DB-->>AS: 应用列表 app list
+        AS->>AS: 检查应用运行限制 check app runtime limits
+        AS->>TM: 检查应用任务完成状态 check app tasks completion
+        TM->>DB: 查询任务完成状态 query task completion status
+        DB-->>TM: 任务状态 task status
+        TM-->>AS: 任务完成情况 task completion info
+        
+        alt 有可用应用 Available App Found
+            AS->>AS: 切换到应用 switch_to_app()
+            AS->>DC: 停止当前应用 stop_app(current_package)
+            DC-->>AS: 应用已停止 app stopped
+            AS->>DC: 启动新应用 start_app(new_package)
+            DC->>DC: 等待应用加载 wait for app loading
+            DC-->>AS: 应用已启动 app started
+            AS->>AS: 更新当前应用状态 update current app state
+            AS->>DB: 更新应用状态 update app status
+            DB-->>AS: 状态已更新 status updated
+            
+            AS->>ACC: 获取应用账户 get_next_account()
+            ACC->>DB: 查询账户信息 query account info
+            DB-->>ACC: 账户数据 account data
+            ACC-->>AS: 账户信息 account info
+            
+            AS->>TM: 执行应用任务 execute_app_tasks()
+            
+            Note over TM,SM: 任务执行子流程 Task Execution Subprocess
+            
+            TM->>TM: 获取下一个任务 get_next_task()
+            TM->>DB: 查询任务配置和依赖 query task config and dependencies
+            DB-->>TM: 任务配置 task config
+            TM->>TM: 检查任务是否可执行 check task executable
+            
+            alt 任务可执行 Task Executable
+                TM->>TM: 创建任务实例 create task instance
+                TM->>TM: 动态加载任务类 load task class dynamically
+                TM->>TM: 启动任务监控 start task monitoring
+                TM->>TM: 异步执行任务 execute_task_async()
+                
+                Note over TM,SM: 任务执行线程 Task Execution Thread
+                
+                TM->>SM: 识别当前场景 recognize_current_scene()
+                SM->>DC: 获取屏幕截图 take_screenshot()
+                DC-->>SM: 截图数据 screenshot data
+                SM->>SR: 识别屏幕内容 find_image/find_text()
+                SR->>SR: 图像/文本识别 image/text recognition
+                SR-->>SM: 识别结果 recognition result
+                SM->>DB: 查询状态配置 query state config
+                Note right of SM: 支持从主数据库和任务数据库识别
+                DB-->>SM: 状态信息 state info
+                SM-->>TM: 当前状态 current state
+                
+                alt 状态匹配 State Matches
+                    TM->>TM: 执行任务逻辑 execute task logic
+                    TM->>DC: 执行设备操作 device operations
+                    Note right of DC: 点击/滑动/输入 tap/swipe/input
+                    DC->>DC: 执行操作 perform actions
+                    DC-->>TM: 操作完成 action completed
+                    TM->>TM: 更新任务进度 update task progress
+                else 状态不匹配 State Mismatch
+                    TM->>SM: 导航到目标状态 navigate_to_state()
+                    SM->>SM: 查找状态路径 find_path()
+                    SM->>DC: 执行导航操作 navigation actions
+                    DC-->>SM: 导航完成 navigation completed
+                    SM-->>TM: 状态导航完成 state navigation done
+                end
+                
+                TM->>TM: 检查任务完成 check task completion
+                
+                alt 任务完成 Task Completed
+                    TM->>DB: 更新任务状态 update task status
+                    DB-->>TM: 状态已更新 status updated
+                    TM->>ACC: 更新账户任务状态 update account task status
+                    ACC->>DB: 保存账户状态 save account status
+                    DB-->>ACC: 状态已保存 status saved
+                    ACC-->>TM: 账户状态已更新 account status updated
+                    TM->>DB: 记录活动日志 log activity
+                    DB-->>TM: 日志已记录 log recorded
+                else 任务失败需重试 Task Failed Need Retry
+                    TM->>TM: 增加重试计数 increment retry count
+                    TM->>TM: 等待重试 wait for retry
+                    TM->>TM: 重新执行任务 retry task execution
+                else 任务失败超过重试次数 Task Failed Max Retries
+                    TM->>DB: 记录任务失败 log task failure
+                    DB-->>TM: 失败已记录 failure recorded
+                end
+                
+                TM->>TM: 停止任务监控 stop task monitoring
+                TM->>TM: 清理任务资源 cleanup task resources
+            else 任务不可执行 Task Not Executable
+                TM->>TM: 跳过任务 skip task
+            end
+            
+            TM-->>AS: 应用任务完成 app tasks completed
+            AS->>AS: 更新应用运行时间 update app runtime
+            AS->>DB: 保存运行统计 save runtime stats
+            DB-->>AS: 统计已保存 stats saved
+            
+            AS->>AS: 检查时间片和限制 check time slice and limits
+            
+            alt 继续当前应用 Continue Current App
+                AS->>AS: 检查是否有活动任务 check active tasks
+                alt 有活动任务 Has Active Tasks
+                    AS->>TM: 执行下一个任务 execute next task
+                else 无活动任务 No Active Tasks
+                    AS->>ACC: 尝试切换账户 try switch account
+                    ACC->>DB: 查询下一个账户 query next account
+                    DB-->>ACC: 账户信息 account info
+                    ACC-->>AS: 账户切换结果 account switch result
+                end
+            else 切换应用 Switch App
+                AS->>AS: 准备切换到下一个应用 prepare next app
+            end
+        else 无可用应用 No Available App
+            AS->>AS: 等待调度间隔 wait for scheduling interval
+        end
+    end
+    
+    Note over User,ACC: 系统关闭阶段 System Shutdown Phase
+    
+    User->>SK: 停止系统 stop()
+    SK->>AS: 停止调度器 stop()
+    AS->>AS: 停止调度线程 stop scheduling thread
+    AS-->>SK: 调度器已停止 scheduler stopped
+    SK->>SM: 停止状态监控 stop_monitoring()
+    SM->>SM: 停止监控线程 stop monitoring thread
+    SM-->>SK: 状态监控已停止 state monitoring stopped
+    SK->>TM: 关闭任务管理器 shutdown()
+    TM-->>SK: 任务管理器已关闭 task manager closed
+    SK->>SR: 关闭屏幕识别器 shutdown()
+    SR-->>SK: 识别器已关闭 recognizer closed
+    SK->>DC: 关闭设备控制器 shutdown()
+    DC-->>SK: 设备控制器已关闭 device controller closed
+    SK->>DB: 关闭数据库连接 shutdown()
+    DB-->>SK: 数据库已关闭 database closed
+    SK-->>User: 系统关闭完成 system shutdown complete
+    
+    Note over User,ACC: 错误处理流程 Error Handling Flow
+    
+    rect rgb(255, 200, 200)
+        Note right of DC: 设备连接错误 Device Connection Error
+        DC->>SK: 设备连接失败 device connection failed
+        SK->>SK: 记录错误日志 log error
+        SK->>AS: 暂停调度 pause scheduling
+        AS-->>SK: 调度已暂停 scheduling paused
+        SK->>SK: 尝试重新连接 attempt reconnection
+        
+        alt 重连成功 Reconnection Success
+            SK->>AS: 恢复调度 resume scheduling
+            AS-->>SK: 调度已恢复 scheduling resumed
+        else 重连失败 Reconnection Failed
+            SK->>User: 系统错误通知 system error notification
+            User->>SK: 手动干预 manual intervention
+        end
+    end
+    
+    rect rgb(200, 255, 200)
+        Note right of SR: 识别超时处理 Recognition Timeout Handling
+        SR->>TM: 识别超时 recognition timeout
+        TM->>TM: 标记识别失败 mark recognition failed
+        TM->>DB: 记录识别失败 log recognition failure
+        DB-->>TM: 记录已保存 log saved
+        TM->>TM: 跳过当前步骤 skip current step
+    end
